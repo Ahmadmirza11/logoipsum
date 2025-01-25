@@ -9,8 +9,9 @@ import {
 import {useNavigation} from '@react-navigation/native';
 import {OtpInput} from 'react-native-otp-entry';
 
-const Myotp = () => {
+const Myotp = ({route}) => {
   const navigation = useNavigation();
+  const {fullName, phoneNumber, email, password, imageUrl} = route.params;
   return (
     <View style={styles.container}>
       <View style={styles.back}>
@@ -18,6 +19,7 @@ const Myotp = () => {
       </View>
 
       <Text style={styles.helo}>Enter Vatification Code</Text>
+      
       <Text style={styles.hi}>
         Enter the 4-digit code we sent to your phone number or email address.
       </Text>
