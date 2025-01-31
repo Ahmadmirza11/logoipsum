@@ -1,8 +1,16 @@
-// SignIn.js
-import React, {useState, useEffect} from 'react';
-import {StyleSheet, Text, View, TouchableOpacity, Image, ScrollView, KeyboardAvoidingView, Platform} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {Formik} from 'formik';
+import React, { useState } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  Image,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  StatusBar,
+} from 'react-native';
+import { Formik } from 'formik';
 import * as Yup from 'yup';
 import CommonTextInput from '../../component/textinput';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -11,85 +19,95 @@ import {
   widthPercentageToDP as wp,
   heightPercentageToDP as hp,
 } from 'react-native-responsive-screen';
-import {useNavigation} from '@react-navigation/native';
-import {launchImageLibrary} from 'react-native-image-picker';
+import { launchImageLibrary } from 'react-native-image-picker';
+import axios from 'axios';
+import { useNavigation } from '@react-navigation/native'; // Import navigation
 
 const SignIn = () => {
-  const navigation = useNavigation();
-  const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedImage, setSelectedImage] = useState("");
+  const [image, setImage] = useState('');
+  const navigation = useNavigation(); // Initialize navigation
 
-  // Function to store image URI in local storage
-  const saveImageToLocalStorage = async uri => {
+  // Function to send OTP
+  const codesend = async phone => {
     try {
-      await AsyncStorage.setItem('selectedImage', uri);
-      console.log('Image URI saved to local storage:', uri);
+      const response = await axios.post('https://api.loctour.com/api/users/send-code', {
+        phone,
+        type: 'register',
+      });
+      console.log('OTP Response:', response.data);
+      return response.data; // ✅ Return the OTP response
     } catch (error) {
-      console.error('Failed to save image URI:', error);
+      console.error('Error sending OTP:', error.response?.data || error.message);
     }
   };
 
-  // Function to load image URI from local storage
-  const loadImageFromLocalStorage = async () => {
-    try {
-      const storedImage = await AsyncStorage.getItem('selectedImage');
-      if (storedImage) {
-        setSelectedImage(storedImage);
-        console.log('Image URI loaded from local storage:', storedImage);
-      }
-    } catch (error) {
-      console.error('Failed to load image URI:', error);
-    }
-  };
-
-  // Load image URI when the component mounts
-  useEffect(() => {
-    loadImageFromLocalStorage();
-  }, []);
-
+  // Function to open image picker
   const openImagePicker = () => {
-    const options = {
-      mediaType: 'photo',
-      quality: 1,
-      maxWidth: 100,
-      maxHeight: 100,
-      includeBase64: true,
-    };
-
-    launchImageLibrary(options, response => {
-      if (response.didCancel) {
-        console.log('User cancelled image picker');
-      } else if (response.errorMessage) {
-        console.log('ImagePicker Error: ', response.errorMessage);
-      } else if (response.assets && response.assets.length > 0) {
-        const selectedAsset = response.assets[0];
-        setSelectedImage(selectedAsset.uri);
-        saveImageToLocalStorage(selectedAsset.uri);
-        console.log('User picked image: ', selectedAsset.uri);
+    launchImageLibrary(
+      {
+        mediaType: 'photo',
+        quality: 1,
+        maxWidth: 100,
+        maxHeight: 100,
+        includeBase64: true,
+      },
+      response => {
+        if (!response.didCancel && response.assets?.length > 0) {
+          const selectedAsset = response.assets[0];
+          setSelectedImage({
+            uri: selectedAsset.uri,
+            name: selectedAsset.fileName,
+            type: selectedAsset.type,
+          });
+        }
       }
-    });
+    );
   };
 
-  // Validation Schema
-  const validationSchema = Yup.object().shape({
-    fullName: Yup.string()
-      .min(3, 'Full name must be at least 3 characters long')
-      .required('Full name is required'),
-    phoneNumber: Yup.string()
-      .matches(/^\d{11}$/, 'Phone number must be 11 digits')
-      .required('Phone number is required'),
-    email: Yup.string()
-      .email('Invalid email address')
-      .required('Email is required'),
-    password: Yup.string()
-      .min(6, 'Password must be at least 6 characters long')
-      .required('Password is required'),
-  });
+  // Function to handle form submission
+  const handleFormSubmit = async values => {
+    if (!selectedImage) {
+      console.log('No image selected');
+      return;
+    }
+
+    try {
+      // Upload image
+      const formData = new FormData();
+      formData.append('image', {
+        uri: selectedImage.uri,
+        name: selectedImage.name,
+        type: selectedImage.type,
+      });
+
+      const imageResponse = await axios.post('https://api.loctour.com/api/image/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      console.log('Image Upload suc:', imageResponse.data);
+      setImage(imageResponse.data.image);
+      if (imageResponse.data?.image) {
+        const otpResponse = await codesend(values.phone); // Get OTP response
+
+        // Navigate to the next screen with collected data
+        navigation.navigate('otpFunction', {
+          name: values.name,
+          username: values.username,
+          email: values.email,
+          phone: values.phone,
+          image: image // Uploaded image URL
+        // OTP code
+        });
+      }
+    } catch (error) {
+      console.error('Error during submission:', error.response?.data || error.message);
+    }
+  };
 
   return (
-    <KeyboardAvoidingView
-      style={{flex: 1}}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={{flexGrow: 1}}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <StatusBar barStyle="dark-content" />
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
         <View style={styles.container}>
           <View style={styles.back}>
             <Icon name="arrow-back" size={29} />
@@ -97,71 +115,44 @@ const SignIn = () => {
 
           <Text style={styles.helo}>Welcome Back 👋🏼</Text>
 
-          {/* Image Picker */}
           <TouchableOpacity style={styles.imagePicker} onPress={openImagePicker}>
             {selectedImage ? (
-              <View style={styles.imageContainer}>
-                <Image source={{uri: selectedImage}} style={styles.imagePreview} />
-                <View style={styles.plusIconContainer}>
-                  <Icon name="add-circle" size={24} color="green" />
-                </View>
-              </View>
+              <Image source={{ uri: selectedImage.uri }} style={styles.imagePreview} />
             ) : (
-              <View style={styles.imageContainer}>
-                <Image
-                  source={require('../../images/picker.png')}
-                  style={styles.imagePickerIcon}
-                />
-                <View style={styles.plusIconContainer}>
-                  <Icon name="add-circle" size={24} color="green" />
-                </View>
-              </View>
+              <Image source={require('../../images/picker.png')} style={styles.imagePickerIcon} />
             )}
           </TouchableOpacity>
 
           <Formik
-            initialValues={{
-              fullName: '',
-              phoneNumber: '',
-              email: '',
-              password: '',
-            }}
-            validationSchema={validationSchema}
-            onSubmit={values => {
-              console.log('Form Submitted:', values);
-              navigation.navigate('otpFunction', {
-                fullName: values.fullName,
-                phoneNumber: values.phoneNumber,
-                email: values.email,
-                password: values.password,
-                imageUrl: selectedImage,
-              });
-            }}>
-            {({handleChange, handleBlur, handleSubmit, values, errors, touched}) => (
+            initialValues={{ name: '', username: '', email: '', phone: '' }}
+            validationSchema={Yup.object({
+              name: Yup.string().min(3, 'Minimum 3 characters').required('Full name required'),
+              username: Yup.string().min(3, 'Minimum 3 characters').required('Username required'),
+              email: Yup.string().email('Invalid email').required('Email required'),
+              phone: Yup.string().required('Phone number required'),
+            })}
+            onSubmit={handleFormSubmit}
+          >
+            {({ handleChange, handleBlur, handleSubmit, values, errors, touched }) => (
               <>
                 <View style={styles.input}>
                   <Text style={styles.inputLabel}>Full Name</Text>
                   <CommonTextInput
-                    onChangeText={handleChange('fullName')}
-                    onBlur={handleBlur('fullName')}
-                    value={values.fullName}
+                    onChangeText={handleChange('name')}
+                    onBlur={handleBlur('name')}
+                    value={values.name}
                   />
-                  {touched.fullName && errors.fullName && (
-                    <Text style={styles.errorText}>{errors.fullName}</Text>
-                  )}
+                  {touched.name && errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
                 </View>
 
                 <View style={styles.input}>
-                  <Text style={styles.inputLabel}>Phone Number</Text>
+                  <Text style={styles.inputLabel}>Username</Text>
                   <CommonTextInput
-                    onChangeText={handleChange('phoneNumber')}
-                    onBlur={handleBlur('phoneNumber')}
-                    value={values.phoneNumber}
-                    keyboardType="numeric"
+                    onChangeText={handleChange('username')}
+                    onBlur={handleBlur('username')}
+                    value={values.username}
                   />
-                  {touched.phoneNumber && errors.phoneNumber && (
-                    <Text style={styles.errorText}>{errors.phoneNumber}</Text>
-                  )}
+                  {touched.username && errors.username && <Text style={styles.errorText}>{errors.username}</Text>}
                 </View>
 
                 <View style={styles.input}>
@@ -170,32 +161,23 @@ const SignIn = () => {
                     onChangeText={handleChange('email')}
                     onBlur={handleBlur('email')}
                     value={values.email}
-                    keyboardType="email-address"
                   />
-                  {touched.email && errors.email && (
-                    <Text style={styles.errorText}>{errors.email}</Text>
-                  )}
+                  {touched.email && errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                 </View>
 
                 <View style={styles.input}>
-                  <Text style={styles.inputLabel}>Password</Text>
+                  <Text style={styles.inputLabel}>Phone Number</Text>
                   <CommonTextInput
-                    onChangeText={handleChange('password')}
-                    onBlur={handleBlur('password')}
-                    value={values.password}
-                    secureTextEntry
+                    onChangeText={handleChange('phone')}
+                    onBlur={handleBlur('phone')}
+                    value={values.phone}
+                    keyboardType="numeric"
                   />
-                  {touched.password && errors.password && (
-                    <Text style={styles.errorText}>{errors.password}</Text>
-                  )}
+                  {touched.phone && errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
                 </View>
 
                 <View style={styles.center}>
-                  <CommonButton
-                    title={'Sign In'}
-                    containerStyle={styles.btn}
-                    onPress={handleSubmit}
-                  />
+                  <CommonButton title={'Sign in'} containerStyle={styles.btn} onPress={handleSubmit} />
                 </View>
               </>
             )}
@@ -241,7 +223,7 @@ const styles = StyleSheet.create({
     width: wp(90),
   },
   imagePicker: {
-    marginTop: hp(5),
+    marginTop: hp(7),
     marginBottom: hp(2),
   },
   imagePickerIcon: {
@@ -253,42 +235,8 @@ const styles = StyleSheet.create({
     height: wp(20),
     borderRadius: wp(10),
   },
-  imageContainer: {
-    position: 'relative',
-    width: wp(20),
-    height: wp(20),
-  },
-  plusIconContainer: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: 'white',
-    borderRadius: wp(5),
-    padding: 2,
-  },
   errorText: {
     color: 'red',
     fontSize: wp(2.5),
-  
   },
 });
-
-// // OtpFunction.js
-// import React from 'react';
-// import {View, Text, Image} from 'react-native';
-
-// const OtpFunction = ({route}) => {
-//   const {fullName, phoneNumber, email, password, imageUrl} = route.params;
-
-//   return (
-//     <View>
-//       <Text>Full Name: {fullName}</Text>
-//       <Text>Phone Number: {phoneNumber}</Text>
-//       <Text>Email: {email}</Text>
-//       <Text>Password: {password}</Text>
-//       {imageUrl && <Image source={{uri: imageUrl}} style={{width: 100, height: 100}} />}
-//     </View>
-//   );
-// };
-
-// export default OtpFunction;
